@@ -43,7 +43,7 @@ let lastFrame = 0;
 
 function connect() {
   socket = new WebSocket(
-    (location.protocol === "https:" ? "wss://" : "ws://") + location.host
+    "wss://litebrowser-server.onrender.com"
   );
   socket.binaryType = "blob";
 
