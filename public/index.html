@@ -1,0 +1,167 @@
+
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LiteBrowser</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#101116;color:#fff;font-family:Arial,sans-serif}
+header{display:flex;gap:8px;align-items:center;padding:12px;background:#20212b}
+header strong{white-space:nowrap}
+input{flex:1;min-width:0;padding:10px;background:#101116;color:#fff;border:1px solid #444;border-radius:7px}
+button{padding:10px 15px;border:0;border-radius:7px;background:#41465a;color:white;cursor:pointer}
+button:hover{background:#565d78}
+#status{padding:8px 12px;font-size:13px;color:#bbb}
+#screen{width:100%;height:calc(100vh - 105px);overflow:hidden;display:flex;align-items:center;justify-content:center;background:#080808;touch-action:none}
+canvas{width:100%;height:100%;object-fit:contain;outline:none}
+@media(max-width:600px){header{flex-wrap:wrap}header strong{width:100%}#screen{height:calc(100vh - 125px)}}
+</style>
+</head>
+<body>
+<header>
+  <strong>LiteBrowser</strong>
+  <input id="url" value="https://poki.com" placeholder="Skriv en webbadress">
+  <button id="go">Gå</button>
+</header>
+
+<div id="status">Ansluter till LiteBrowser...</div>
+<div id="screen">
+  <canvas id="view" width="960" height="540" tabindex="0"></canvas>
+</div>
+
+<script>
+const canvas = document.getElementById("view");
+const ctx = canvas.getContext("2d", {alpha:false});
+const status = document.getElementById("status");
+const urlInput = document.getElementById("url");
+
+let socket;
+let ready = false;
+let lastFrame = 0;
+
+function connect() {
+  socket = new WebSocket(
+    (location.protocol === "https:" ? "wss://" : "ws://") + location.host
+  );
+  socket.binaryType = "blob";
+
+  socket.onopen = () => {
+    status.textContent = "Ansluten. Startar din privata webbläsarsession...";
+  };
+
+  socket.onmessage = async event => {
+    if (typeof event.data === "string") {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+
+      if (msg.type === "ready") {
+        ready = true;
+        status.textContent = "Redo — din egen webbläsarsession är igång.";
+      }
+
+      if (msg.type === "error") {
+        status.textContent = msg.message;
+      }
+      return;
+    }
+
+    try {
+      const bitmap = await createImageBitmap(event.data);
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      lastFrame = performance.now();
+    } catch {}
+  };
+
+  socket.onclose = () => {
+    ready = false;
+    status.textContent = "Anslutningen bröts. Ladda om sidan för att försöka igen.";
+  };
+
+  socket.onerror = () => {
+    status.textContent = "Kunde inte ansluta till servern.";
+  };
+}
+
+function send(data) {
+  if (ready && socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(data));
+  }
+}
+
+function navigate() {
+  if (!ready) return;
+  send({type:"navigate", url:urlInput.value});
+  canvas.focus();
+}
+
+document.getElementById("go").addEventListener("click", navigate);
+urlInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") navigate();
+});
+
+function point(e) {
+  const r = canvas.getBoundingClientRect();
+  const scale = Math.min(r.width / 960, r.height / 540);
+  const w = 960 * scale;
+  const h = 540 * scale;
+  const left = r.left + (r.width - w) / 2;
+  const top = r.top + (r.height - h) / 2;
+
+  return {
+    x: Math.max(0, Math.min(959, (e.clientX - left) / scale)),
+    y: Math.max(0, Math.min(539, (e.clientY - top) / scale))
+  };
+}
+
+canvas.addEventListener("pointermove", e => {
+  send({type:"mouse", ...point(e), move:true});
+});
+
+canvas.addEventListener("pointerdown", e => {
+  canvas.focus();
+  canvas.setPointerCapture(e.pointerId);
+  send({type:"mouse", ...point(e), down:true});
+});
+
+canvas.addEventListener("pointerup", e => {
+  send({type:"mouse", ...point(e), up:true});
+});
+
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  send({
+    type:"mouse",
+    wheel:true,
+    wheelX:e.deltaX,
+    wheelY:e.deltaY
+  });
+}, {passive:false});
+
+const keyMap = {
+  " ": "Space",
+  "ArrowUp": "ArrowUp",
+  "ArrowDown": "ArrowDown",
+  "ArrowLeft": "ArrowLeft",
+  "ArrowRight": "ArrowRight"
+};
+
+document.addEventListener("keydown", e => {
+  if (document.activeElement === urlInput) return;
+  if (["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) {
+    e.preventDefault();
+  }
+  send({type:"key", key:keyMap[e.key] || e.key, down:true});
+});
+
+document.addEventListener("keyup", e => {
+  if (document.activeElement === urlInput) return;
+  send({type:"key", key:keyMap[e.key] || e.key, up:true});
+});
+
+connect();
+</script>
+</body>
+</html>
