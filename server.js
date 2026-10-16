@@ -62,7 +62,19 @@ wss.on("connection", async (ws) => {
 
     page = await context.newPage();
 
-    await page.goto("https://poki.com", {
+ try {
+  await page.goto("https://poki.com", {
+    waitUntil: "domcontentloaded",
+    timeout: 30000
+  });
+} catch (err) {
+  console.error("Poki laddningsfel:", err.message);
+}
+
+if (closed || ws.readyState !== WebSocket.OPEN) {
+  await cleanup();
+  return;
+}
       waitUntil: "domcontentloaded",
       timeout: 60000
     });
