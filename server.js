@@ -75,15 +75,6 @@ if (closed || ws.readyState !== WebSocket.OPEN) {
   await cleanup();
   return;
 }
-      waitUntil: "domcontentloaded",
-      timeout: 60000
-    });
-
-    if (closed) {
-      await context.close();
-      return;
-    }
-
     ws.send(JSON.stringify({
       type: "ready",
       width: WIDTH,
